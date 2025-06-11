@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Artillery Report</title>
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 1400px;
+      margin: auto;
+      background: #f9f9f9;
+      color: #333;
+    }
+    input[type="file"] {
+      margin-bottom: 20px;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .col-6 {
+      flex: 1 1 48%;
+      min-width: 400px;
+      background: #fff;
+      border: 1px solid #ddd;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .metric-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .metric-card {
+      flex: 1 1 200px;
+      padding: 15px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    .metric-card strong {
+      display: block;
+      font-size: 14px;
+      color: #555;
+    }
+    .metric-card span {
+      font-size: 20px;
+      color: #222;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background: #eee;
+    }
+  </style>
+</head>
+<body>
+  <h2>📂 Upload Artillery JSON</h2>
+  <input type="file" id="jsonFile" accept=".json" />
+  <div id="charts" class="row"></div>
+
+  <h3>📊 Summary Metrics</h3>
+  <div class="metric-summary" id="summaryMetrics"></div>
+
+  <h3>📌 Endpoint Status Breakdown</h3>
+  <div id="breakdownTable"></div>
+
+  <h3>📋 Response Time Detail per Endpoint</h3>
+  <table id="responseTable">
+    <thead>
+      <tr>
+        <th>Endpoint</th>
+        <th>Count</th>
+        <th>Mean</th>
+        <th>p50</th>
+        <th>p75</th>
+        <th>p90</th>
+        <th>p95</th>
+        <th>p99</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    document.getElementById('jsonFile').addEventListener('change', function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          const data = JSON.parse(e.target.result);
+          renderCharts(data);
+          renderSummary(data);
+          renderBreakdown(data);
+          renderResponseTable(data);
+        } catch (err) {
+          alert("Invalid JSON file: " + err.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    function renderCharts(data) {
+      const summaries = data.aggregate.summaries || {};
+      const counters = data.aggregate.counters || {};
+      const rates = data.aggregate.rates || {};
+
+      const httpSummary = summaries['http.response_time'] || {};
+      const rps = rates['http.request_rate'] || 0;
+
+      const adminSummary = summaries['plugins.metrics-by-endpoint.response_time./api/admin/login'] || {};
+      const employeeSummary = summaries['plugins.metrics-by-endpoint.response_time./api/employee/login'] || {};
+
+      document.getElementById('charts').innerHTML = `
+        <div id="chart1" class="col-6"></div>
+        <div id="chart2" class="col-6"></div>
+        <div id="chart3" class="col-6"></div>
+        <div id="chart4" class="col-6"></div>
+      `;
+
+      Plotly.newPlot('chart1', [{
+        x: ['min', 'mean', 'p50', 'p95', 'p99', 'max'],
+        y: [
+          httpSummary.min, httpSummary.mean, httpSummary.p50,
+          httpSummary.p95, httpSummary.p99, httpSummary.max
+        ],
+        type: 'bar'
+      }], { title: 'HTTP Response Time (ms)' });
+
+      Plotly.newPlot('chart2', [{
+        x: ['RPS'],
+        y: [rps],
+        type: 'bar'
+      }], { title: 'Requests Per Second' });
+
+      Plotly.newPlot('chart3', [
+        {
+          name: 'Admin',
+          x: ['min', 'mean', 'p95', 'max'],
+          y: [
+            adminSummary.min, adminSummary.mean,
+            adminSummary.p95, adminSummary.max
+          ],
+          type: 'bar'
+        },
+        {
+          name: 'Employee',
+          x: ['min', 'mean', 'p95', 'max'],
+          y: [
+            employeeSummary.min, employeeSummary.mean,
+            employeeSummary.p95, employeeSummary.max
+          ],
+          type: 'bar'
+        }
+      ], { title: 'Endpoint Comparison', barmode: 'group' });
+
+      const codes = {};
+      for (let key in counters) {
+        const match = key.match(/codes\.(\d{3})$/);
+        if (match) {
+          const code = match[1];
+          codes[code] = (codes[code] || 0) + counters[key];
+        }
+      }
+
+      Plotly.newPlot('chart4', [{
+        labels: Object.keys(codes),
+        values: Object.values(codes),
+        type: 'pie'
+      }], { title: 'Status Code Distribution' });
+    }
+
+    function renderSummary(data) {
+      const http = data.aggregate.summaries['http.response_time'] || {};
+      const counters = data.aggregate.counters || {};
+      const rps = data.aggregate.rates?.['http.request_rate'] || 0;
+
+      const summaryHTML = `
+        <div class="metric-card"><strong>Total Requests</strong><span>${counters['http.requests'] || 0}</span></div>
+        <div class="metric-card"><strong>Median Latency (ms)</strong><span>${http.median || '-'}</span></div>
+        <div class="metric-card"><strong>95th Percentile (ms)</strong><span>${http.p95 || '-'}</span></div>
+        <div class="metric-card"><strong>Max Latency (ms)</strong><span>${http.max || '-'}</span></div>
+        <div class="metric-card"><strong>Request Rate</strong><span>${rps}</span></div>
+      `;
+      document.getElementById('summaryMetrics').innerHTML = summaryHTML;
+    }
+
+    function renderBreakdown(data) {
+      const counters = data.aggregate.counters || {};
+      const breakdown = {};
+
+      Object.entries(counters).forEach(([key, value]) => {
+        const match = key.match(/^plugins\.metrics-by-endpoint\.(.+?)\.codes\.(\d{3})$/);
+        if (match) {
+          const endpoint = match[1];
+          const code = match[2];
+          if (!breakdown[endpoint]) {
+            breakdown[endpoint] = {
+              total: 0,
+              code200: 0,
+              code400: 0,
+              code422: 0,
+              otherErrors: 0
+            };
+          }
+
+          breakdown[endpoint].total += value;
+          if (code === '200') breakdown[endpoint].code200 += value;
+          else if (code === '400') breakdown[endpoint].code400 += value;
+          else if (code === '422') breakdown[endpoint].code422 += value;
+          else if (code.startsWith('4') || code.startsWith('5')) breakdown[endpoint].otherErrors += value;
+        }
+      });
+
+      let html = `
+        <table>
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>Total</th>
+              <th>200</th>
+              <th>400</th>
+              <th>422</th>
+              <th>Other Errors</th>
+              <th>Success Rate</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+      Object.entries(breakdown).forEach(([endpoint, stat]) => {
+        const rate = stat.total ? ((stat.code200 / stat.total) * 100).toFixed(2) + '%' : '-';
+        html += `
+          <tr>
+            <td>${endpoint}</td>
+            <td>${stat.total}</td>
+            <td>${stat.code200}</td>
+            <td>${stat.code400}</td>
+            <td>${stat.code422}</td>
+            <td>${stat.otherErrors}</td>
+            <td>${rate}</td>
+          </tr>`;
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('breakdownTable').innerHTML = html;
+    }
+
+    function renderResponseTable(data) {
+      const summaries = data.aggregate?.summaries || {};
+      const tbody = document.querySelector('#responseTable tbody');
+      tbody.innerHTML = '';
+
+      Object.entries(summaries)
+        .filter(([k]) => k.startsWith('plugins.metrics-by-endpoint.response_time.'))
+        .forEach(([key, val]) => {
+          const endpoint = key.replace('plugins.metrics-by-endpoint.response_time.', '');
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${endpoint}</td>
+            <td>${val.count}</td>
+            <td>${val.mean?.toFixed(1) || '-'}</td>
+            <td>${val.p50?.toFixed(1) || '-'}</td>
+            <td>${val.p75?.toFixed(1) || '-'}</td>
+            <td>${val.p90?.toFixed(1) || '-'}</td>
+            <td>${val.p95?.toFixed(1) || '-'}</td>
+            <td>${val.p99?.toFixed(1) || '-'}</td>
+          `;
+          tbody.appendChild(row);
+        });
+    }
+  </script>
+</body>
+</html>

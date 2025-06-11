@@ -1,0 +1,103 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 30
+      arrivalRate: 1
+      name: Warm up
+
+    - duration: 60
+      arrivalRate: 1
+      rampTo: 10
+      name: Ramp up
+
+    - duration: 30
+      arrivalRate: 3
+      name: Cooldown
+  payload:
+    - path: admin_users.csv
+      fields:
+        - username_admin
+        - password_admin
+    - path: employee_users.csv
+      fields:
+        - username_emp
+        - password_emp
+    - path: overtime_dates.csv
+      fields:
+        - overtime_date
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: Admin & Employee Flow
+    flow:
+      # 1. Login admin
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "{{ username_admin }}"
+            password: "{{ password_admin }}"
+          capture:
+            - json: "$.data.accessToken"
+              as: adminToken
+
+      # 2. Create attendance period
+      - post:
+          url: "/api/admin/attendance-periods"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          json:
+            start_date: "2025-03-01"
+            end_date: "2025-03-30"
+          capture:
+            - json: "$.data.id"
+              as: periodId
+
+      # 3. Login employee
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "{{ username_emp }}"
+            password: "{{ password_emp }}"
+          capture:
+            - json: "$.data.accessToken"
+              as: employeeToken
+
+      # 4. Employee POST overtime
+      - post:
+          url: "/api/employee/overtimes"
+          headers:
+            Authorization: "Bearer {{ employeeToken }}"
+          json:
+            date: "{{ overtime_date }}"
+            hours: 2
+
+      # 5. Employee POST reimbursement
+      - post:
+          url: "/api/employee/reimbursements"
+          headers:
+            Authorization: "Bearer {{ employeeToken }}"
+          json:
+            date: "2025-03-01"
+            amount: 250000
+            description: "Beli paket data"
+
+      # 6. Admin run payroll
+      - post:
+          url: "/api/admin/payrolls/run"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          json:
+            attendance_period_id: "{{ periodId }}"
+
+      # 7. Admin get summary
+      - get:
+          url: "/api/admin/payrolls/summary/{{ periodId }}"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+
+      # 8. Employee get payslip
+      - get:
+          url: "/api/employee/payslip/{{ periodId }}"
+          headers:
+            Authorization: "Bearer {{ employeeToken }}"
