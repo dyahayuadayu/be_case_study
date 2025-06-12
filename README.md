@@ -5,8 +5,8 @@
 
 This repository contains a Payroll API system built with ExpressJS, Sequelize, PostgreSQL, and JWT-based authentication. The system supports both admin and employee roles to manage payrolls, attendances, reimbursements, overtimes, and payslip generation. It also includes logging, audit trails, and testing support.
 
-📌 **GitHub Repository**: [https://github.com/dyahayuadayu/be_case_study](github link)
-📌 **Postman API Collection**: [https://martian-robot-713148.postman.co/workspace/My-Workspace~49709345-8b02-4098-8ae8-62d56c3009d1/collection/7117163-f2a88de2-0404-4f1b-bb7a-6ffed838f76b?action=share&creator=7117163](postman link)
+📌 **GitHub Repository**: [github link](https://github.com/dyahayuadayu/be_case_study)
+📌 **Postman API Collection**: [Postman Collection](https://martian-robot-713148.postman.co/workspace/My-Workspace~49709345-8b02-4098-8ae8-62d56c3009d1/collection/7117163-f2a88de2-0404-4f1b-bb7a-6ffed838f76b?action=share&creator=7117163)
 
 ---
 
